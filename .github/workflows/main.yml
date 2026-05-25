@@ -9,18 +9,15 @@ jobs:
     timeout-minutes: 360
 
     steps:
-      # 1. Generate VNC Password
       - name: Generate Password
         run: |
           PASS=$(openssl rand -base64 12)
           echo "VNC_PASS=$PASS" >> $GITHUB_ENV
 
-      # 2. Install Tailscale
       - name: Install Tailscale
         run: |
           brew install --cask tailscale
 
-      # 3. Start Tailscale
       - name: Connect Tailscale
         run: |
           sudo tailscaled &
@@ -36,22 +33,9 @@ jobs:
 
           echo "TS_IP=$IP" >> $GITHUB_ENV
 
-      # 4. Enable VNC
       - name: Enable VNC
         run: |
-          mkdir -p ~/.vnc
-
-          echo "$VNC_PASS" | perl -we '
-            use Digest::DES;
-            my $pass = substr($ARGV[0],0,8);
-            $pass .= "\0" x (8 - length($pass));
-            my $key = pack("C*", map { $_ << 1 } unpack("C*", $pass));
-            print crypt($pass, $key);
-          ' > ~/.vnc/passwd
-
-          chmod 600 ~/.vnc/passwd
-
-          /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate \
             -configure \
             -access -on \
@@ -59,27 +43,18 @@ jobs:
             -clientopts -setvncpw -vncpw "$VNC_PASS" \
             -restart -agent
 
-      # 5. Send Credentials to Telegram
       - name: Send Telegram Message
         run: |
-          MSG="🍏 macOS VNC READY
-
-IP: $TS_IP
-Port: 5900
-
-Password: $VNC_PASS
-
-Connect using VNC Viewer over Tailscale."
+          MSG="🍏 macOS VNC READY%0A%0AIP: $TS_IP%0APort: 5900%0A%0APassword: $VNC_PASS"
 
           curl -s -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d text="$MSG"
 
-      # 6. Keep Alive
       - name: Keep Alive
         run: |
           while true; do
-            echo "macOS VNC running..."
+            echo "Running..."
             sleep 300
           done
