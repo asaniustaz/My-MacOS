@@ -9,30 +9,30 @@ jobs:
     timeout-minutes: 360
 
     steps:
+      # 1. Generate VNC password
       - name: Generate Password
         run: |
           PASS=$(openssl rand -base64 12)
           echo "VNC_PASS=$PASS" >> $GITHUB_ENV
 
+      # 2. Install Tailscale (FIXED)
       - name: Install Tailscale
         run: |
-          brew install --cask tailscale
+          brew install tailscale
 
+      # 3. Connect Tailscale (FIXED - NO tailscaled)
       - name: Connect Tailscale
         run: |
-          sudo tailscaled &
-          sleep 5
-
-          sudo tailscale up \
+          tailscale up \
             --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} \
             --hostname=macos-${{ github.run_id }}
 
           sleep 10
 
           IP=$(tailscale ip -4 | head -n1)
-
           echo "TS_IP=$IP" >> $GITHUB_ENV
 
+      # 4. Enable VNC on macOS
       - name: Enable VNC
         run: |
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
@@ -43,6 +43,7 @@ jobs:
             -clientopts -setvncpw -vncpw "$VNC_PASS" \
             -restart -agent
 
+      # 5. Send credentials to Telegram (SAFE FORMAT)
       - name: Send Telegram Message
         run: |
           MSG="🍏 macOS VNC READY%0A%0AIP: $TS_IP%0APort: 5900%0A%0APassword: $VNC_PASS"
@@ -52,9 +53,10 @@ jobs:
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d text="$MSG"
 
+      # 6. Keep session alive
       - name: Keep Alive
         run: |
           while true; do
-            echo "Running..."
+            echo "macOS running..."
             sleep 300
           done
