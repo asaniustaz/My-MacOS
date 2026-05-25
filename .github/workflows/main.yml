@@ -1,70 +1,65 @@
-name: Free RDP Server (Tailscale + VNC)
+name: macOS Temporary VNC (Tailscale)
 
 on:
   workflow_dispatch:
 
 jobs:
-  rdp:
-    runs-on: ubuntu-latest
+  macos:
+    runs-on: macos-latest
     timeout-minutes: 360
 
     steps:
-      # 1. Update system
-      - name: Setup Linux Desktop
+      # 1. Generate password
+      - name: Generate Password
         run: |
-          sudo apt update
-          sudo apt install -y xfce4 xfce4-goodies tightvncserver curl
+          PASS=$(openssl rand -base64 10)
+          echo "VNC_PASS=$PASS" >> $GITHUB_ENV
 
-      # 2. Install Tailscale correctly
+      # 2. Install Tailscale (IMPORTANT FIX)
       - name: Install Tailscale
         run: |
-          curl -fsSL https://tailscale.com/install.sh | sh
+          brew install tailscale
 
-      # 3. Start Tailscale (FIXED)
+      # 3. Start Tailscale (FIXED DAEMON ISSUE)
       - name: Connect Tailscale
         run: |
-          sudo tailscaled &
+          sudo launchctl load /Library/LaunchDaemons/com.tailscale.tailscaled.plist || true
           sleep 5
 
-          sudo tailscale up \
+          tailscale up \
             --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} \
-            --hostname=rdp-${{ github.run_id }}
+            --hostname=macos-${{ github.run_id }}
 
           sleep 10
 
           IP=$(tailscale ip -4 | head -n1)
           echo "TS_IP=$IP" >> $GITHUB_ENV
 
-      # 4. Setup VNC password
-      - name: Setup VNC
+      # 4. Enable macOS Screen Sharing (VNC)
+      - name: Enable VNC
         run: |
-          mkdir -p ~/.vnc
-          VNC_PASS=$(openssl rand -base64 10)
-          echo "$VNC_PASS" > ~/.vnc/pass.txt
-          echo "$VNC_PASS" | vncpasswd -f > ~/.vnc/passwd
-          chmod 600 ~/.vnc/passwd
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
+            -activate \
+            -configure \
+            -access -on \
+            -clientopts -setvnclegacy -vnclegacy yes \
+            -clientopts -setvncpw -vncpw "$VNC_PASS" \
+            -restart -agent
 
-          echo "VNC_PASS=$VNC_PASS" >> $GITHUB_ENV
-
-      # 5. Start desktop + VNC
-      - name: Start Desktop
+      # 5. Send Telegram info
+      - name: Send Telegram
         run: |
-          vncserver :1 -geometry 1280x720 -depth 24
-
-      # 6. Send Telegram message
-      - name: Send Telegram Info
-        run: |
-          MSG="🖥️ RDP READY%0A%0AIP: $TS_IP%0APort: 5901%0APassword: $VNC_PASS"
+          MSG="🍏 macOS READY%0A%0AIP: $TS_IP%0APort: 5900%0APassword: $VNC_PASS"
 
           curl -s -X POST \
             "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
             -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
             -d text="$MSG"
 
-      # 7. Keep alive
+      # 6. Keep session alive
       - name: Keep Alive
         run: |
           while true; do
-            echo "RDP running..."
+            echo "macOS running..."
             sleep 300
           done
